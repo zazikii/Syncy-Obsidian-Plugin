@@ -9,8 +9,10 @@
     "build": "tsc --noEmit && node esbuild.config.mjs production",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:integration": "vitest run tests/integration.test.ts",
     "test:watch": "vitest",
     "lint": "biome check src tests",
+    "check": "npm run typecheck && npm run lint && npm test",
     "format": "biome check --write src tests"
   },
   "keywords": [
