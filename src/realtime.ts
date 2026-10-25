@@ -4,6 +4,7 @@ import { AuthLostError, NetworkError, SyncyApiError } from "./util/errors";
 
 export interface RealtimeHandlers {
   onVaultChanged: (revision: number, originDeviceId: string | null) => void;
+  onVaultUpdated: (name: string) => void;
   onVaultDeleted: () => void;
   onMembershipChanged: () => void;
   onConnected: () => void;
@@ -72,9 +73,7 @@ export class RealtimeClient {
       socket.onerror = () => {
         try {
           socket.close();
-        } catch {
-          // Ignore close failures.
-        }
+        } catch {}
       };
       socket.onclose = () => {
         if (this.socket === socket) {
@@ -118,6 +117,11 @@ export class RealtimeClient {
       case "vault_changed":
         if (message.vaultId === this.vaultId) {
           this.handlers.onVaultChanged(message.revision, message.originDeviceId);
+        }
+        break;
+      case "vault_updated":
+        if (message.vaultId === this.vaultId) {
+          this.handlers.onVaultUpdated(message.name);
         }
         break;
       case "vault_deleted":

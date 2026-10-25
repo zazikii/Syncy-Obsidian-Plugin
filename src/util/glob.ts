@@ -60,9 +60,16 @@ export function globToRegExp(pattern: string): RegExp | null {
   if (normalized.endsWith("/")) normalized += "**";
 
   const hasSlash = normalized.includes("/");
+  let directoryTree = false;
+  if (normalized.endsWith("/**")) {
+    directoryTree = true;
+    normalized = normalized.slice(0, -3);
+  }
+
   const body = globBodyToRegExp(normalized);
+  const suffix = directoryTree ? "(?:/.*)?" : "";
   const prefix = hasSlash ? "^" : "(?:^|.*/)";
-  return new RegExp(`${prefix}${body}$`, "i");
+  return new RegExp(`${prefix}${body}${suffix}$`, "i");
 }
 
 export interface PathMatcherOptions {

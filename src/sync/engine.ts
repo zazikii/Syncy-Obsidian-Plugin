@@ -54,6 +54,14 @@ function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   return copy.buffer;
 }
 
+function hasControlCharacters(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code < 0x20 || code === 0x7f) return true;
+  }
+  return false;
+}
+
 function positiveInt(value: number | undefined, fallback: number): number {
   if (value === undefined || !Number.isFinite(value) || value < 0) return fallback;
   return Math.floor(value);
@@ -119,9 +127,10 @@ export class SyncEngine {
   private lastStatus: EngineStatus = { phase: "idle", message: "", lastSyncAt: null };
 
   private readonly touchedPaths = new Map<string, { path: string; action: "upsert" | "delete" }>();
-  private readonly suppressedUntil = new Map<string, number>();
+  private readonly expectedDeletes = new Map<string, number>();
   private readonly tooLarge = new Set<string>();
   private conflictNotices = 0;
+  private localOps: Promise<void> = Promise.resolve();
 
   constructor(options: SyncEngineOptions) {
     this.options = options;
@@ -180,6 +189,7 @@ export class SyncEngine {
   async stopAndWait(): Promise<void> {
     this.stop();
     if (this.currentSync) await this.currentSync.catch(() => undefined);
+    await this.localOps;
     await this.state.flush().catch(() => undefined);
   }
 
@@ -219,15 +229,21 @@ export class SyncEngine {
   resetState(): void {
     this.state.reset(true);
     this.touchedPaths.clear();
-    this.suppressedUntil.clear();
+    this.expectedDeletes.clear();
   }
 
   private schedulePendingRetry(): void {
     const now = Date.now();
-    const hasActive = this.state
-      .pendingEntries()
-      .some((entry) => entry.notBefore === null || entry.notBefore <= now);
-    if (hasActive) this.scheduleSync(1000);
+    const entries = this.state.pendingEntries();
+    if (entries.length === 0) return;
+    if (entries.some((entry) => entry.notBefore === null || entry.notBefore <= now)) {
+      this.scheduleSync(1000);
+      return;
+    }
+    const next = Math.min(...entries.map((entry) => entry.notBefore ?? Number.POSITIVE_INFINITY));
+    if (next - now < 10_000) {
+      this.scheduleSync(Math.max(500, next - now + 100));
+    }
   }
 
   private scheduleSync(delay: number): void {
@@ -312,13 +328,16 @@ export class SyncEngine {
       return;
     }
     if (isSyncyApiError(error)) {
-      if (error.status === 401 || error.status === 403) {
-        if (error.code === "INSUFFICIENT_ROLE") {
-          this.readOnly = true;
-          this.emit("paused", "Read-only vault access");
-          this.options.notify("Syncy has read-only access to this vault.");
-          return;
-        }
+      if (error.status === 401) {
+        this.stop();
+        this.options.onAuthLost(message);
+        return;
+      }
+      if (error.status === 403 && error.code === "INSUFFICIENT_ROLE") {
+        this.readOnly = true;
+        this.emit("paused", "Read-only vault access");
+        this.options.notify("Syncy has read-only access to this vault.");
+        return;
       }
       if (error.code === "VAULT_NOT_FOUND") {
         this.stop();
@@ -343,7 +362,6 @@ export class SyncEngine {
 
   private async fullSync(): Promise<void> {
     const firstSync = !this.state.state.initialized;
-    const livePaths = new Set<string>();
     let snapshotRevision: number | null = null;
     let cursor: string | null = null;
 
@@ -357,7 +375,7 @@ export class SyncEngine {
       });
       if (snapshotRevision === null) snapshotRevision = page.revision;
       for (const file of page.files) {
-        await this.adoptServerFile(file, livePaths, firstSync);
+        await this.adoptServerFile(file, firstSync);
       }
       cursor = page.nextCursor;
       await this.state.flush();
@@ -393,24 +411,21 @@ export class SyncEngine {
     }
   }
 
-  private async adoptServerFile(
-    server: FileSummary,
-    livePaths: Set<string>,
-    firstSync: boolean,
-  ): Promise<void> {
+  private async adoptServerFile(server: FileSummary, firstSync: boolean): Promise<void> {
     if (server.encrypted && !this.options.e2ee) {
       throw new SyncPausedError("The server reports an encrypted vault");
     }
     const path = await this.decodeServerPath(server);
     if (this.options.isExcluded(path)) return;
-    livePaths.add(pathKey(path));
 
     if (server.deleted) {
       if (firstSync) return;
       const entry = this.state.state.files[server.fileId];
       if (!entry) return;
       if (this.state.hasPending(server.fileId)) return;
-      await this.removeLocalPath(entry.path, entry.kind);
+      if (this.state.fileIdAt(entry.path) === server.fileId) {
+        await this.removeLocalPath(entry.path, entry.kind);
+      }
       this.state.removeFile(server.fileId);
       return;
     }
@@ -643,7 +658,9 @@ export class SyncEngine {
 
     if (change.deleted) {
       if (entry) {
-        await this.removeLocalPath(entry.path, entry.kind);
+        if (this.state.fileIdAt(entry.path) === change.fileId) {
+          await this.removeLocalPath(entry.path, entry.kind);
+        }
         this.state.removeFile(change.fileId);
       }
       return;
@@ -702,6 +719,7 @@ export class SyncEngine {
 
   private async pushAll(): Promise<void> {
     await this.state.flush();
+    if (this.state.pendingEntries().length > 0) this.emit("syncing", "Uploading changes");
     for (let round = 0; round < PUSH_ROUNDS; round += 1) {
       const now = Date.now();
       const active = this.state
@@ -948,6 +966,15 @@ export class SyncEngine {
         entry,
         error instanceof Error ? error.message : "Could not encrypt path",
       );
+      return null;
+    }
+
+    if (!this.options.e2ee && (entry.path.length > 2048 || hasControlCharacters(entry.path))) {
+      await this.markPendingFailure(entry, "The file path is not valid for Syncy");
+      return null;
+    }
+    if (this.options.e2ee && path.length > 16_384) {
+      await this.markPendingFailure(entry, "The encrypted file path is too long");
       return null;
     }
 
@@ -1419,7 +1446,13 @@ export class SyncEngine {
     const pending = pendingId ? this.state.pendingFor(pendingId) : null;
     if (known?.entry.kind === "folder" && !pending) return;
     if (pending && !pending.deleted) return;
-    const fileId = known?.fileId ?? pending?.fileId ?? randomId();
+    let fileId = known?.fileId ?? pending?.fileId ?? null;
+    if (!fileId) {
+      fileId =
+        this.options.e2ee && !this.state.state.initialized
+          ? await this.requireCrypto().fileIdForPath(normalized)
+          : randomId();
+    }
     const stat = await this.adapter.stat(normalized);
     this.state.enqueue({
       fileId,
@@ -1512,7 +1545,8 @@ export class SyncEngine {
   handleDelete(path: string): void {
     if (!this.started || this.applying > 0) return;
     const normalized = normalizeVaultPath(path);
-    if (!normalized || this.isSuppressed(normalized)) return;
+    if (!normalized) return;
+    if (this.consumeExpectedDelete(normalized)) return;
     if (this.options.isExcluded(normalized)) return;
     this.touchedPaths.set(pathKey(normalized), { path: normalized, action: "delete" });
     this.scheduleLocalFlush();
@@ -1523,22 +1557,27 @@ export class SyncEngine {
     const normalized = normalizeVaultPath(path);
     const previous = normalizeVaultPath(oldPath);
     if (!normalized || !previous || normalized === previous) return;
-    if (this.isSuppressed(normalized) || this.isSuppressed(previous)) return;
+
+    const targetId = this.state.fileIdAt(normalized);
+    const sourceId = this.state.fileIdAt(previous);
+    if (targetId && targetId !== sourceId) return;
 
     const oldExcluded = this.options.isExcluded(previous);
     const newExcluded = this.options.isExcluded(normalized);
     if (oldExcluded && newExcluded) return;
     if (oldExcluded && !newExcluded) {
-      void this.queueLocalTree(normalized);
+      this.enqueueLocalOp(() => this.queueLocalTree(normalized));
       return;
     }
     if (!oldExcluded && newExcluded) {
-      void this.queueDeleteTree(previous);
+      this.enqueueLocalOp(async () => {
+        await this.queueDeleteTree(previous);
+      });
       this.touchedPaths.delete(pathKey(previous));
       return;
     }
 
-    void this.applyLocalRename(previous, normalized);
+    this.enqueueLocalOp(() => this.applyLocalRename(previous, normalized));
   }
 
   private async queueLocalTree(path: string): Promise<void> {
@@ -1640,11 +1679,20 @@ export class SyncEngine {
     this.scheduleSync(400);
   }
 
+  private enqueueLocalOp(task: () => Promise<void>): void {
+    this.localOps = this.localOps.then(task).catch((error: unknown) => {
+      this.options.notify(
+        `Syncy could not process a local file operation: ${error instanceof Error ? error.message : "unknown error"}`,
+      );
+    });
+  }
+
   private async flushLocalNow(): Promise<void> {
     if (this.localTimer !== null) {
       window.clearTimeout(this.localTimer);
       this.localTimer = null;
     }
+    await this.localOps;
     if (this.touchedPaths.size > 0 && this.applying === 0) {
       await this.flushLocalChanges();
     }
@@ -1660,6 +1708,7 @@ export class SyncEngine {
 
   private async flushLocalChanges(): Promise<void> {
     if (!this.started) return;
+    await this.localOps;
     if (this.applying > 0) {
       this.scheduleLocalFlush();
       return;
@@ -1749,12 +1798,18 @@ export class SyncEngine {
       const temp = `${parentPath(normalized) ? `${parentPath(normalized)}/` : ""}.syncy-tmp-${randomId()}`;
       await this.adapter.writeBinary(temp, content);
       const existing = await this.adapter.stat(normalized);
-      if (existing?.type === "file") await this.adapter.remove(normalized);
       if (existing?.type === "folder") {
         throw new SyncPausedError(`Cannot replace folder with file: ${normalized}`);
       }
-      await this.adapter.rename(temp, normalized);
-      this.suppress(normalized);
+      try {
+        await this.adapter.rename(temp, normalized);
+      } catch {
+        if (existing?.type === "file") {
+          this.expectDelete(normalized);
+          await this.adapter.remove(normalized);
+        }
+        await this.adapter.rename(temp, normalized);
+      }
     } finally {
       this.applying -= 1;
     }
@@ -1768,13 +1823,12 @@ export class SyncEngine {
     try {
       await this.ensureFolder(parentPath(newPath));
       const destination = await this.adapter.stat(newPath);
+      if (destination) this.expectDelete(newPath);
       if (destination?.type === "file") await this.adapter.remove(newPath);
       if (destination?.type === "folder") {
         await this.adapter.rmdir(newPath, false).catch(() => undefined);
       }
       await this.adapter.rename(oldPath, newPath);
-      this.suppress(oldPath);
-      this.suppress(newPath);
     } finally {
       this.applying -= 1;
     }
@@ -1785,12 +1839,12 @@ export class SyncEngine {
     if (!stat) return;
     this.applying += 1;
     try {
+      this.expectDelete(path);
       if (stat.type === "file" || kind === "file") {
         await this.adapter.remove(path);
       } else {
         await this.adapter.rmdir(path, false).catch(() => undefined);
       }
-      this.suppress(path);
     } finally {
       this.applying -= 1;
     }
@@ -1817,7 +1871,6 @@ export class SyncEngine {
     }
     await this.ensureFolder(parentPath(normalized));
     await this.adapter.mkdir(normalized);
-    this.suppress(normalized);
   }
 
   private async pickConflictPath(path: string): Promise<string> {
@@ -1833,18 +1886,15 @@ export class SyncEngine {
     this.options.notify(`Syncy kept a conflicting local copy as "${path}".`);
   }
 
-  private suppress(path: string): void {
-    this.suppressedUntil.set(pathKey(path), Date.now() + 2000);
+  private expectDelete(path: string): void {
+    this.expectedDeletes.set(pathKey(path), Date.now() + 2000);
   }
 
-  private isSuppressed(path: string): boolean {
+  private consumeExpectedDelete(path: string): boolean {
     const key = pathKey(path);
-    const until = this.suppressedUntil.get(key);
+    const until = this.expectedDeletes.get(key);
     if (until === undefined) return false;
-    if (until < Date.now()) {
-      this.suppressedUntil.delete(key);
-      return false;
-    }
-    return true;
+    this.expectedDeletes.delete(key);
+    return until >= Date.now();
   }
 }

@@ -92,11 +92,16 @@ export class SyncySettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Server URL")
-      .setDesc("Base URL of your Syncy server, without /v1.")
+      .setDesc(
+        this.plugin.api?.hasSession()
+          ? "Sign out to change the server or account."
+          : "Base URL of your Syncy server, without /v1.",
+      )
       .addText((text) => {
         text
           .setPlaceholder("https://sync.example.com")
           .setValue(settings.serverUrl)
+          .setDisabled(this.plugin.api?.hasSession() ?? false)
           .onChange(async (value) => {
             await this.plugin.updateSettings({ serverUrl: value });
           });
@@ -109,6 +114,7 @@ export class SyncySettingTab extends PluginSettingTab {
         text
           .setPlaceholder("you@example.com")
           .setValue(settings.email)
+          .setDisabled(this.plugin.api?.hasSession() ?? false)
           .onChange(async (value) => {
             await this.plugin.updateSettings({ email: value });
           });
@@ -128,7 +134,7 @@ export class SyncySettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Device name")
-      .setDesc("Shown in the server's device list.")
+      .setDesc("Used for new sign-ins and reconnects.")
       .addText((text) => {
         text
           .setPlaceholder("Obsidian on my laptop")
@@ -205,7 +211,7 @@ export class SyncySettingTab extends PluginSettingTab {
       return;
     }
 
-    if (this.selectedVaultId === "") {
+    if (!this.plugin.remoteVaults.some((vault) => vault.id === this.selectedVaultId)) {
       this.selectedVaultId = settings.vaultId ?? this.plugin.remoteVaults[0]?.id ?? "";
     }
 
@@ -478,6 +484,13 @@ export class SyncySettingTab extends PluginSettingTab {
         text.inputEl.min = "0";
         text.inputEl.max = "86400";
         text.setValue(String(settings.intervalSeconds));
+        text.onChange(async (value) => {
+          const parsed = Number.parseInt(value, 10);
+          if (!Number.isFinite(parsed)) return;
+          await this.plugin.updateSettings({
+            intervalSeconds: Math.max(0, Math.min(86_400, parsed)),
+          });
+        });
         text.inputEl.addEventListener("blur", async () => {
           const parsed = Number.parseInt(text.inputEl.value, 10);
           const seconds = Number.isFinite(parsed) ? Math.max(0, Math.min(86_400, parsed)) : 30;
@@ -527,11 +540,12 @@ export class SyncySettingTab extends PluginSettingTab {
       .addTextArea((area: TextAreaComponent) => {
         area.setValue(settings.excludePatterns.join("\n"));
         area.inputEl.rows = 4;
+        area.onChange(async (value) => {
+          const patterns = parsePatterns(value);
+          await this.plugin.updateSettings({ excludePatterns: patterns });
+        });
         area.inputEl.addEventListener("blur", async () => {
-          const patterns = area.inputEl.value
-            .split(/\r?\n/)
-            .map((line) => line.trim())
-            .filter((line) => line.length > 0);
+          const patterns = parsePatterns(area.inputEl.value);
           await this.plugin.updateSettings({ excludePatterns: patterns }, true);
         });
       });
@@ -600,4 +614,11 @@ export class SyncySettingTab extends PluginSettingTab {
         info ? `${Math.round(info.maxBlobBytes / (1024 * 1024))} MiB` : "Uses the server default",
       );
   }
+}
+
+function parsePatterns(value: string): string[] {
+  return value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
 }

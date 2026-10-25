@@ -8,13 +8,7 @@ import {
   vaultKeyToBase64,
   wrapVaultKey,
 } from "./crypto";
-import {
-  DEFAULT_SETTINGS,
-  mergePluginData,
-  normalizeServerUrl,
-  type PluginData,
-  type SyncySettings,
-} from "./data";
+import { mergePluginData, normalizeServerUrl, type PluginData, type SyncySettings } from "./data";
 import { RealtimeClient } from "./realtime";
 import { SyncStateStore } from "./state";
 import { type EngineStatus, SyncEngine } from "./sync/engine";
@@ -39,6 +33,7 @@ export default class SyncyPlugin extends Plugin {
   private vaultCryptos = new Map<string, VaultCrypto>();
   private vaultKeyBytes = new Map<string, Uint8Array>();
   private bootstrapTimer: number | null = null;
+  private lastAuthNoticeAt = 0;
 
   async onload(): Promise<void> {
     this.data = mergePluginData(await this.loadData());
@@ -280,7 +275,12 @@ export default class SyncyPlugin extends Plugin {
   }
 
   async unlinkVault(): Promise<void> {
+    const previousVaultId = this.data.settings.vaultId;
     await this.stopLinked();
+    if (previousVaultId) {
+      this.vaultCryptos.delete(previousVaultId);
+      this.vaultKeyBytes.delete(previousVaultId);
+    }
     this.data.settings.vaultId = null;
     this.data.settings.vaultName = "";
     await this.saveData(this.data);
@@ -377,7 +377,11 @@ export default class SyncyPlugin extends Plugin {
       return;
     }
     if (!this.engine) {
-      new Notice("Link a Syncy vault in the plugin settings first.");
+      new Notice(
+        this.data.settings.vaultId
+          ? "Sync is disabled in the Syncy settings."
+          : "Link a Syncy vault in the plugin settings first.",
+      );
       return;
     }
     await this.engine.syncNow();
@@ -418,7 +422,6 @@ export default class SyncyPlugin extends Plugin {
   }
 
   async updateSettings(patch: Partial<SyncySettings>, restart = false): Promise<void> {
-    this.data.settings = { ...DEFAULT_SETTINGS, ...this.data.settings };
     Object.assign(this.data.settings, patch);
     await this.saveData(this.data);
     if (restart && this.data.settings.vaultId && this.api?.hasSession()) {
@@ -478,6 +481,13 @@ export default class SyncyPlugin extends Plugin {
       vault.id,
     );
     this.stateStore = state;
+
+    if (!this.data.settings.syncEnabled) {
+      this.setStatus("Sync disabled", "paused");
+      this.settingsTab?.refresh();
+      return;
+    }
+
     const pluginDir = this.pluginDirectory();
     const excluded = compileExcludes(
       buildExcludePatterns({
@@ -514,33 +524,34 @@ export default class SyncyPlugin extends Plugin {
     });
     this.engine = engine;
 
-    if (this.data.settings.syncEnabled) {
-      engine.start();
-      if (this.data.settings.realtime) {
-        const realtime = new RealtimeClient(this.api, vault.id, {
-          onVaultChanged: (_revision, originDeviceId) => {
-            engine.notifyRemoteChange(originDeviceId);
-          },
-          onVaultDeleted: () => {
-            void this.handleVaultUnavailable("This vault was deleted on the server.");
-          },
-          onMembershipChanged: () => {
-            void this.handleVaultUnavailable(
-              "Your access to this vault changed. Link it again if you still have access.",
-            );
-          },
-          onConnected: () => {
-            engine.notifyRemoteChange(null);
-          },
-          onAuthLost: (message) => {
-            void this.handleAuthLost(message);
-          },
-        });
-        this.realtime = realtime;
-        realtime.start();
-      }
-    } else {
-      this.setStatus("Sync disabled", "paused");
+    engine.start();
+    if (this.data.settings.realtime) {
+      const realtime = new RealtimeClient(this.api, vault.id, {
+        onVaultChanged: (_revision, originDeviceId) => {
+          engine.notifyRemoteChange(originDeviceId);
+        },
+        onVaultUpdated: (name) => {
+          this.data.settings.vaultName = name;
+          void this.saveData(this.data);
+          this.settingsTab?.refresh();
+        },
+        onVaultDeleted: () => {
+          void this.handleVaultUnavailable("This vault was deleted on the server.");
+        },
+        onMembershipChanged: () => {
+          void this.handleVaultUnavailable(
+            "Your access to this vault changed. Link it again if you still have access.",
+          );
+        },
+        onConnected: () => {
+          engine.notifyRemoteChange(null);
+        },
+        onAuthLost: (message) => {
+          void this.handleAuthLost(message);
+        },
+      });
+      this.realtime = realtime;
+      realtime.start();
     }
 
     this.settingsTab?.refresh();
@@ -561,7 +572,10 @@ export default class SyncyPlugin extends Plugin {
   private async handleAuthLost(message: string): Promise<void> {
     await this.stopLinked();
     this.setStatus(message || "Signed out", "paused");
-    new Notice(`Syncy: ${message || "Signed out. Sign in again."}`, 9000);
+    if (Date.now() - this.lastAuthNoticeAt > 3000) {
+      this.lastAuthNoticeAt = Date.now();
+      new Notice(`Syncy: ${message || "Signed out. Sign in again."}`, 9000);
+    }
     this.settingsTab?.refresh();
   }
 
