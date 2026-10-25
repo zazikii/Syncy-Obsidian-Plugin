@@ -60,7 +60,10 @@ describe("exclusions", () => {
     expect(globToRegExp("*.tmp")!.test("Notes/deep/file.tmp")).toBe(true);
     expect(globToRegExp("**/*.tmp")!.test("Notes/deep/file.tmp")).toBe(true);
     expect(globToRegExp("Notes/**")!.test("Notes/deep/file.md")).toBe(true);
+    expect(globToRegExp("Notes/**")!.test("Notes")).toBe(true);
+    expect(globToRegExp("Notes/**")!.test("Notes.md")).toBe(false);
     expect(globToRegExp("Notes/**")!.test("Other/Notes.md")).toBe(false);
+    expect(globToRegExp("Notes/**")!.test("Other/Notes")).toBe(false);
     expect(globToRegExp("*.tmp")!.test("file.tmp.txt")).toBe(false);
   });
 
@@ -74,6 +77,7 @@ describe("exclusions", () => {
       }),
     );
     expect(allOff(".obsidian/app.json")).toBe(true);
+    expect(allOff("Private")).toBe(true);
     expect(allOff("Private/secret.md")).toBe(true);
     expect(allOff("Notes/hello.md")).toBe(false);
   });

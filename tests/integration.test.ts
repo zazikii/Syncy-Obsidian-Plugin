@@ -47,6 +47,7 @@ vi.mock("obsidian", () => ({
 
 import { SyncyApi } from "../src/api";
 import { generateVaultKey, VaultCrypto, wrapVaultKey } from "../src/crypto";
+import { RealtimeClient } from "../src/realtime";
 import { SyncStateStore } from "../src/state";
 import { SyncEngine } from "../src/sync/engine";
 import { buildExcludePatterns, compileExcludes } from "../src/util/glob";
@@ -284,6 +285,17 @@ describe.skipIf(!enabled)("sync engine against a live Syncy server", () => {
     const afterEdit = await api.listFiles(serverVault.id, { limit: 100 });
     const hello = afterEdit.files.find((file) => file.path === "Notes/Hello.md")!;
     expect(hello.hash).toBe(await sha256Hex(Buffer.from("hello updated", "utf8")));
+
+    const helloId = state.entryAt("Notes/Hello.md")!.fileId;
+    const versions = await api.getVersions(serverVault.id, helloId);
+    const original = versions.versions[versions.versions.length - 1]!;
+    const restored = await api.restoreVersion(serverVault.id, helloId, original.id);
+    expect(restored.applied).toBe(true);
+    await waitForSync(
+      engine,
+      async () =>
+        (await fs.readFile(path.join(root, "Notes", "Hello.md"), "utf8")) === "hello world",
+    );
 
     await fs.rename(path.join(root, "Notes", "Hello.md"), path.join(root, "Notes", "Renamed.md"));
     engine.handleRename("Notes/Renamed.md", "Notes/Hello.md");
@@ -614,6 +626,64 @@ describe.skipIf(!enabled)("sync engine against a live Syncy server", () => {
     await api.deleteVault(serverVault.id).catch(() => undefined);
   }, 120_000);
 
+  it("subscribes to realtime vault notifications", async () => {
+    const api = new SyncyApi(serverUrl, {
+      saveSession: async () => undefined,
+      clearSession: async () => undefined,
+      onAuthLost: () => undefined,
+    });
+    await api.login(email, password, { name: "Realtime Integration", platform: "node" });
+    const serverVault = await api.createVault({
+      name: `realtime-${randomUUID().slice(0, 8)}`,
+      e2ee: false,
+    });
+
+    let resolveConnected: (value: boolean) => void = () => undefined;
+    const connected = new Promise<boolean>((resolve) => {
+      resolveConnected = resolve;
+    });
+    let resolveChanged: (value: number) => void = () => undefined;
+    const changed = new Promise<number>((resolve) => {
+      resolveChanged = resolve;
+    });
+
+    const client = new RealtimeClient(api, serverVault.id, {
+      onVaultChanged: (revision) => resolveChanged(revision),
+      onVaultUpdated: () => undefined,
+      onVaultDeleted: () => undefined,
+      onMembershipChanged: () => undefined,
+      onConnected: () => resolveConnected(true),
+      onAuthLost: () => undefined,
+    });
+    client.start();
+
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("Timed out waiting for realtime events")), 10_000),
+    );
+    expect(await Promise.race([connected, timeout])).toBe(true);
+
+    const content = Buffer.from("realtime", "utf8");
+    const hash = await sha256Hex(content);
+    await api.uploadBlob(serverVault.id, hash, arrayBufferOf(content));
+    await api.pushChanges(
+      serverVault.id,
+      [
+        {
+          fileId: "realtime-file",
+          path: "Realtime.md",
+          kind: "file",
+          hash,
+          expectedRevision: null,
+        },
+      ],
+      true,
+    );
+    expect(await Promise.race([changed, timeout])).toBeGreaterThan(0);
+
+    client.stop();
+    await api.deleteVault(serverVault.id).catch(() => undefined);
+  }, 60_000);
+
   it("syncs encrypted vaults without exposing plaintext paths", async () => {
     const { root, vault } = await makeVault();
     const api = new SyncyApi(serverUrl, {
@@ -685,6 +755,57 @@ describe.skipIf(!enabled)("sync engine against a live Syncy server", () => {
     expect(await fs.readFile(path.join(root, "Second.md"), "utf8")).toBe("second secret");
     const after = await api.listFiles(serverVault.id, { limit: 100 });
     expect(after.files).toHaveLength(1);
+
+    const remotePlain = new TextEncoder().encode("from server encrypted");
+    const remoteFileId = "remote-encrypted";
+    const remotePath = await crypto.encryptPath("FromServer.md");
+    const remoteCiphertext = await crypto.encryptContent(remotePlain, remoteFileId);
+    const remoteHash = await sha256Hex(remoteCiphertext);
+    await api.uploadBlob(serverVault.id, remoteHash, arrayBufferOf(Buffer.from(remoteCiphertext)));
+    const remotePush = await api.pushChanges(
+      serverVault.id,
+      [
+        {
+          fileId: remoteFileId,
+          path: remotePath,
+          kind: "file",
+          encrypted: true,
+          hash: remoteHash,
+          expectedRevision: null,
+        },
+      ],
+      true,
+    );
+    await waitForSync(
+      engine,
+      async () =>
+        (await fs.readFile(path.join(root, "FromServer.md"), "utf8").catch(() => "")) ===
+        "from server encrypted",
+    );
+    expect(await fs.readFile(path.join(root, "FromServer.md"), "utf8")).toBe(
+      "from server encrypted",
+    );
+
+    const remoteDelete = await api.pushChanges(
+      serverVault.id,
+      [
+        {
+          fileId: remoteFileId,
+          path: remotePath,
+          kind: "file",
+          deleted: true,
+          expectedRevision: remotePush.results[0]!.revision!,
+        },
+      ],
+      true,
+    );
+    expect(remoteDelete.applied).toBe(true);
+    await waitForSync(engine, async () =>
+      fs
+        .stat(path.join(root, "FromServer.md"))
+        .then(() => false)
+        .catch(() => true),
+    );
 
     await engine.stopAndWait();
     await api.deleteVault(serverVault.id).catch(() => undefined);
