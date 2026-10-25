@@ -333,6 +333,24 @@ npm run test:integration
 
 It creates and deletes temporary vaults on the server and covers initial import, edits, renames, deletes, path swaps, conflicts, config-directory changes, stale cursors, remote moves/deletes, real-time notifications and encrypted sync. The suite is skipped automatically when the environment variables are missing.
 
+### Desktop end-to-end test
+
+The desktop E2E harness launches a real, isolated Obsidian instance and drives the built plugin through Obsidian's own vault API:
+
+```bash
+npm run test:e2e
+```
+
+It copies the installed Obsidian app to a temporary directory, gives it a unique app identity and user data directory, starts a temporary Syncy server, installs and enables the plugin, creates a remote vault, then verifies:
+
+- Initial upload of local notes, folders and binary attachments.
+- Local edits, renames and deletes reaching the server.
+- Version history restore flowing back into the vault.
+- Remote creates and deletes arriving through the WebSocket without polling.
+- `.obsidian` configuration changes syncing through the config-directory scan.
+
+The harness does not touch the currently running Obsidian instance or its vault. It requires Windows and an installed Obsidian app. The Syncy server defaults to the sibling `../Syncy` checkout; override it with `SYNCY_SERVER_DIR`, or point the harness at an existing server with `SYNCY_TEST_URL`, `SYNCY_TEST_EMAIL` and `SYNCY_TEST_PASSWORD`. Set `SYNCY_E2E_OBSIDIAN` to the Obsidian executable if it is installed elsewhere. Failed runs keep their temporary directories for inspection; set `SYNCY_E2E_KEEP=1` to keep a successful run as well.
+
 ### Source layout
 
 | Path | Responsibility |
@@ -345,7 +363,7 @@ It creates and deletes temporary vaults on the server and covers initial import,
 | `src/crypto.ts` | E2EE content/path encryption, file-ID derivation and key envelopes. |
 | `src/ui/` | Settings tab, passphrase/confirmation dialogs and version history. |
 | `src/util/` | Paths, globs, hashing, encoding and errors. |
-| `tests/` | Unit tests and the optional live-server integration suite. |
+| `tests/` | Unit tests, the optional live-server integration suite and the isolated desktop E2E harness. |
 
 ## Contributing
 
