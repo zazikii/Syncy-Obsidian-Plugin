@@ -358,6 +358,10 @@ export class SyncyApi {
     return response.vault;
   }
 
+  async deleteVault(vaultId: string): Promise<void> {
+    await this.request(`/v1/vaults/${encodeURIComponent(vaultId)}`, { method: "DELETE" });
+  }
+
   async renameVault(vaultId: string, name: string): Promise<Vault> {
     const response = await this.requestJson<{ vault: Vault }>(
       `/v1/vaults/${encodeURIComponent(vaultId)}`,

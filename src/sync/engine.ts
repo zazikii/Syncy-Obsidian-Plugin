@@ -180,6 +180,7 @@ export class SyncEngine {
   async stopAndWait(): Promise<void> {
     this.stop();
     if (this.currentSync) await this.currentSync.catch(() => undefined);
+    await this.state.flush().catch(() => undefined);
   }
 
   notifyRemoteChange(originDeviceId?: string | null): void {
@@ -209,6 +210,10 @@ export class SyncEngine {
   async requestFullResync(): Promise<void> {
     this.forceFull = true;
     await this.syncNow();
+  }
+
+  async flushLocalPending(): Promise<void> {
+    await this.flushLocalNow();
   }
 
   resetState(): void {
@@ -249,6 +254,7 @@ export class SyncEngine {
 
     for (;;) {
       try {
+        await this.flushLocalNow();
         if (!this.state.state.initialized || this.forceFull) {
           this.forceFull = false;
           await this.fullSync();
@@ -261,7 +267,19 @@ export class SyncEngine {
         this.state.touch(null);
         await this.state.flush();
         this.retryDelay = 1000;
-        this.emit("synced", this.readOnly ? "Read-only access" : "Synced");
+        if (this.retryTimer !== null) {
+          window.clearTimeout(this.retryTimer);
+          this.retryTimer = null;
+        }
+        const blocked = this.state.pendingEntries().filter((entry) => entry.reason !== null);
+        if (blocked.length > 0) {
+          this.emit(
+            "error",
+            `${blocked.length} change${blocked.length === 1 ? "" : "s"} need attention`,
+          );
+        } else {
+          this.emit("synced", this.readOnly ? "Read-only access" : "Synced");
+        }
         this.schedulePendingRetry();
         return;
       } catch (error) {
@@ -683,6 +701,7 @@ export class SyncEngine {
   }
 
   private async pushAll(): Promise<void> {
+    await this.state.flush();
     for (let round = 0; round < PUSH_ROUNDS; round += 1) {
       const now = Date.now();
       const active = this.state
@@ -1031,20 +1050,52 @@ export class SyncEngine {
       return true;
     }
 
-    if (pending.kind === "folder" || server.kind === "folder") {
-      if (server.deleted) {
+    if (server.deleted) {
+      if (pending.deleted) {
         this.state.removeFile(pending.fileId);
         this.state.removePending(pending.fileId);
         return true;
       }
-      await this.ensureFolder((await this.decodeServerPath(server)) || pending.path);
-      const path = await this.decodeServerPath(server);
-      if (path) {
+      const content = await this.readLocalFile(pending.path);
+      if (content) await this.preserveLocalConflict(pending.path, content);
+      await this.removeLocalPath(pending.path, pending.kind);
+      this.state.removeFile(pending.fileId);
+      this.state.removePending(pending.fileId);
+      return true;
+    }
+
+    if (pending.deleted) {
+      await this.applyServerFile(server);
+      this.state.removePending(pending.fileId);
+      return true;
+    }
+
+    if (pending.kind !== server.kind) {
+      if (pending.kind === "file" && server.kind === "folder") {
+        const content = await this.readLocalFile(pending.path);
+        if (content) await this.preserveLocalConflict(pending.path, content);
+        await this.removeLocalPath(pending.path, "file");
+        this.state.removeFile(pending.fileId);
+        this.state.removePending(pending.fileId);
+        await this.applyServerFile(server);
+        return true;
+      }
+      await this.markPendingFailure(
+        pending,
+        "The server has a different file type at this path. Resolve it manually.",
+      );
+      return false;
+    }
+
+    if (server.kind === "folder") {
+      const path = (await this.decodeServerPath(server)) || pending.path;
+      await this.ensureFolder(path);
+      if (path !== pending.path) {
         this.remapStateTree(pending.path, path);
         await this.moveLocalPath(pending.path, path);
       }
       this.state.setFile(pending.fileId, {
-        path: path || pending.path,
+        path,
         kind: "folder",
         revision: server.revision,
         hash: null,
@@ -1052,27 +1103,6 @@ export class SyncEngine {
         mtime: server.mtime,
         ctime: server.ctime,
       });
-      this.state.removePending(pending.fileId);
-      return true;
-    }
-
-    if (pending.deleted) {
-      if (server.deleted) {
-        this.state.removeFile(pending.fileId);
-      } else {
-        await this.applyServerFile(server);
-      }
-      this.state.removePending(pending.fileId);
-      return true;
-    }
-
-    if (server.deleted) {
-      const content = await this.readLocalFile(pending.path);
-      if (content) {
-        await this.preserveLocalConflict(pending.path, content);
-      }
-      await this.removeLocalPath(pending.path, pending.kind);
-      this.state.removeFile(pending.fileId);
       this.state.removePending(pending.fileId);
       return true;
     }
@@ -1092,6 +1122,9 @@ export class SyncEngine {
     const content = await this.readLocalFile(pending.path);
     if (content) {
       await this.preserveLocalConflict(pending.path, content);
+    }
+    if (pending.path !== info.path) {
+      await this.removeLocalPath(pending.path, pending.kind);
     }
     this.state.removeFile(pending.fileId);
     this.state.removePending(pending.fileId);
@@ -1173,20 +1206,11 @@ export class SyncEngine {
     }
 
     if (pending.kind === "folder") {
-      if (serverPath) {
-        await this.ensureFolder(serverPath);
-        this.state.setFile(server.fileId, {
-          path: serverPath,
-          kind: "folder",
-          revision: server.revision,
-          hash: null,
-          localHash: null,
-          mtime: server.mtime,
-          ctime: server.ctime,
-        });
-      }
-      this.state.removePending(pending.fileId);
-      return true;
+      await this.markPendingFailure(
+        pending,
+        "The server has a file where this folder belongs. Resolve it manually.",
+      );
+      return false;
     }
 
     const content = await this.readLocalFile(pending.path);
@@ -1479,7 +1503,7 @@ export class SyncEngine {
   handleCreateOrModify(path: string): void {
     if (!this.started || this.applying > 0) return;
     const normalized = normalizeVaultPath(path);
-    if (!normalized || this.isSuppressed(normalized)) return;
+    if (!normalized) return;
     if (this.options.isExcluded(normalized)) return;
     this.touchedPaths.set(pathKey(normalized), { path: normalized, action: "upsert" });
     this.scheduleLocalFlush();
@@ -1614,6 +1638,16 @@ export class SyncEngine {
 
     await this.enqueueUpsertFromDisk(newPath, false);
     this.scheduleSync(400);
+  }
+
+  private async flushLocalNow(): Promise<void> {
+    if (this.localTimer !== null) {
+      window.clearTimeout(this.localTimer);
+      this.localTimer = null;
+    }
+    if (this.touchedPaths.size > 0 && this.applying === 0) {
+      await this.flushLocalChanges();
+    }
   }
 
   private scheduleLocalFlush(): void {

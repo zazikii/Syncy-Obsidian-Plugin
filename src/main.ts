@@ -18,11 +18,11 @@ import {
 import { RealtimeClient } from "./realtime";
 import { SyncStateStore } from "./state";
 import { type EngineStatus, SyncEngine } from "./sync/engine";
-import type { ServerInfo, Vault } from "./types";
+import type { ServerInfo, StoredSession, Vault } from "./types";
 import { openHistoryModal } from "./ui/history";
 import { askPassphrase, confirmAction } from "./ui/modals";
 import { SyncySettingTab } from "./ui/settingsTab";
-import { AuthLostError, errorMessage } from "./util/errors";
+import { AuthLostError, errorMessage, isSyncyApiError } from "./util/errors";
 import { buildExcludePatterns, compileExcludes } from "./util/glob";
 
 export default class SyncyPlugin extends Plugin {
@@ -97,6 +97,10 @@ export default class SyncyPlugin extends Plugin {
   }
 
   private async bootstrap(): Promise<void> {
+    if (this.bootstrapTimer !== null) {
+      window.clearTimeout(this.bootstrapTimer);
+      this.bootstrapTimer = null;
+    }
     const api = this.api;
     if (!api) return;
     try {
@@ -152,11 +156,21 @@ export default class SyncyPlugin extends Plugin {
     const api = this.api;
     this.serverInfo = await api.getInfo();
     const deviceName = this.deviceName();
-    const session = await api.login(email.trim(), password, {
-      ...(this.data.deviceId ? { id: this.data.deviceId } : {}),
-      name: deviceName,
-      platform: platformName(),
-    });
+    let session: StoredSession;
+    try {
+      session = await api.login(email.trim(), password, {
+        ...(this.data.deviceId ? { id: this.data.deviceId } : {}),
+        name: deviceName,
+        platform: platformName(),
+      });
+    } catch (error) {
+      if (!isSyncyApiError(error) || error.code !== "DEVICE_EXISTS") throw error;
+      this.data.deviceId = null;
+      session = await api.login(email.trim(), password, {
+        name: deviceName,
+        platform: platformName(),
+      });
+    }
     this.data.deviceId = session.deviceId;
     await this.saveData(this.data);
     this.remoteVaults = await api.getVaults();
@@ -404,7 +418,8 @@ export default class SyncyPlugin extends Plugin {
   }
 
   async updateSettings(patch: Partial<SyncySettings>, restart = false): Promise<void> {
-    this.data.settings = { ...DEFAULT_SETTINGS, ...this.data.settings, ...patch };
+    this.data.settings = { ...DEFAULT_SETTINGS, ...this.data.settings };
+    Object.assign(this.data.settings, patch);
     await this.saveData(this.data);
     if (restart && this.data.settings.vaultId && this.api?.hasSession()) {
       await this.stopLinked();
@@ -463,12 +478,13 @@ export default class SyncyPlugin extends Plugin {
       vault.id,
     );
     this.stateStore = state;
+    const pluginDir = this.pluginDirectory();
     const excluded = compileExcludes(
       buildExcludePatterns({
         syncConfig: this.data.settings.syncConfig,
         syncWorkspace: this.data.settings.syncWorkspace,
         syncPluginData: this.data.settings.syncPluginData,
-        extraPatterns: this.data.settings.excludePatterns,
+        extraPatterns: [...this.data.settings.excludePatterns, pluginDir, `${pluginDir}/**`],
       }),
     );
 

@@ -46,7 +46,7 @@ export class SyncySettingTab extends PluginSettingTab {
     const rows: Array<[string, string]> = [];
     if (this.plugin.api?.hasSession()) {
       rows.push(["Account", this.plugin.data.session?.user.email ?? settings.email]);
-      rows.push(["Server", this.plugin.data.settings.serverUrl]);
+      rows.push(["Server", this.plugin.api?.getServerUrl() ?? settings.serverUrl]);
     }
     if (settings.vaultId) {
       rows.push(["Linked vault", linked?.name ?? settings.vaultName ?? settings.vaultId]);

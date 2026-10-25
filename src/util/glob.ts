@@ -92,6 +92,7 @@ export function buildExcludePatterns(options: PathMatcherOptions): string[] {
   if (!options.syncWorkspace) {
     patterns.push(".obsidian/workspace.json", "workspace.json");
     patterns.push(".obsidian/workspace-mobile.json", "workspace-mobile.json");
+    patterns.push(".obsidian/workspaces.json");
   }
   if (!options.syncPluginData) patterns.push(".obsidian/plugins/*/data.json");
   if (options.syncConfig) {
