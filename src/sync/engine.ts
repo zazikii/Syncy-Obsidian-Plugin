@@ -131,6 +131,7 @@ export class SyncEngine {
   private readonly tooLarge = new Set<string>();
   private conflictNotices = 0;
   private localOps: Promise<void> = Promise.resolve();
+  private readonly configCache = new Map<string, { mtime: number; size: number }>();
 
   constructor(options: SyncEngineOptions) {
     this.options = options;
@@ -271,6 +272,7 @@ export class SyncEngine {
     for (;;) {
       try {
         await this.flushLocalNow();
+        if (this.state.state.initialized) await this.scanConfigDir();
         if (!this.state.state.initialized || this.forceFull) {
           this.forceFull = false;
           await this.fullSync();
@@ -387,6 +389,8 @@ export class SyncEngine {
     await this.state.flush();
 
     await this.scanLocalExtras();
+    this.configCache.clear();
+    await this.scanConfigDir();
     this.state.state.initialized = true;
     await this.state.flush();
   }
@@ -408,6 +412,87 @@ export class SyncEngine {
       if (!path || this.options.isExcluded(path)) continue;
       if (this.state.fileIdAt(path) || this.state.pendingIdAt(path)) continue;
       await this.enqueueFolderUpsert(path);
+    }
+  }
+
+  private async scanConfigDir(): Promise<void> {
+    if (!this.app.vault.configDir) return;
+    const configDir = normalizeVaultPath(this.app.vault.configDir);
+    if (!configDir || this.options.isExcluded(configDir)) return;
+
+    const seen = new Set<string>();
+    let rootListed = false;
+    let complete = true;
+
+    const visit = async (directory: string): Promise<void> => {
+      let listed: { files: string[]; folders: string[] };
+      try {
+        listed = await this.adapter.list(directory);
+      } catch {
+        complete = false;
+        return;
+      }
+      if (directory === configDir) rootListed = true;
+
+      for (const folder of listed.folders) {
+        const path = normalizeVaultPath(folder);
+        if (this.options.isExcluded(path)) continue;
+        seen.add(pathKey(path));
+        await visit(path);
+      }
+
+      for (const file of listed.files) {
+        const path = normalizeVaultPath(file);
+        if (this.options.isExcluded(path)) continue;
+        seen.add(pathKey(path));
+        const stat = await this.adapter.stat(path);
+        if (stat?.type !== "file") continue;
+        const key = pathKey(path);
+        const cached = this.configCache.get(key);
+        if (cached && cached.size === stat.size && Math.abs(cached.mtime - stat.mtime) < 1) {
+          continue;
+        }
+        try {
+          await this.enqueueUpsertFromDisk(path, false);
+          this.configCache.set(key, { mtime: stat.mtime, size: stat.size });
+        } catch {
+          this.configCache.delete(key);
+        }
+      }
+    };
+
+    const configStat = await this.adapter.stat(configDir);
+    if (configStat?.type !== "folder") return;
+    seen.add(pathKey(configDir));
+    await visit(configDir);
+    if (!rootListed || !complete) return;
+
+    const missing: Array<{ fileId: string; entry: { path: string; kind: "file" | "folder" } }> = [];
+    for (const item of this.state.filesUnder(configDir)) {
+      const { fileId, entry } = item;
+      if (this.options.isExcluded(entry.path)) continue;
+      if (seen.has(pathKey(entry.path))) continue;
+      if (this.state.hasPending(fileId)) continue;
+      if (await this.adapter.exists(entry.path)) {
+        seen.add(pathKey(entry.path));
+        continue;
+      }
+      missing.push({ fileId, entry: { path: entry.path, kind: entry.kind } });
+    }
+
+    if (missing.length > 0) {
+      await new Promise((resolve) => window.setTimeout(resolve, 250));
+      for (const item of missing) {
+        if (await this.adapter.exists(item.entry.path)) {
+          seen.add(pathKey(item.entry.path));
+          continue;
+        }
+        await this.queueDeleteAt(item.entry.path);
+      }
+    }
+
+    for (const key of this.configCache.keys()) {
+      if (!seen.has(key)) this.configCache.delete(key);
     }
   }
 

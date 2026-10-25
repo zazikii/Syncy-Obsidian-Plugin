@@ -71,6 +71,8 @@ Repeat the setup on each device and link the same remote vault. Devices authenti
 | `.obsidian/themes/**`, `.obsidian/snippets/**` | `.obsidian/plugins/*/data.json` unless plugin data sync is enabled |
 | `.obsidian/plugins/**` bundles, manifests and styles | The Syncy plugin folder and its local sync state |
 
+Syncy rescans `.obsidian` on each sync because Obsidian does not consistently emit vault events for its configuration directory. This also catches settings changed while the plugin was disabled.
+
 The **Sync** section of the settings lets you:
 
 - Disable periodic polling or real-time notifications.
