@@ -13,7 +13,10 @@ export class SyncyApiError extends Error {
 }
 
 export class NetworkError extends Error {
-  constructor(message: string, readonly cause?: unknown) {
+  constructor(
+    message: string,
+    readonly cause?: unknown,
+  ) {
     super(message);
     this.name = "NetworkError";
   }

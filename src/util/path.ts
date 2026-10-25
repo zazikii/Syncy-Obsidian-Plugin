@@ -87,3 +87,22 @@ export function uniquePath(
   const fallback = `${stem} ${Date.now()}${extension}`;
   return directory ? `${directory}/${fallback}` : fallback;
 }
+
+export async function uniquePathAsync(
+  candidate: string,
+  exists: (path: string) => Promise<boolean>,
+  maxAttempts = 100,
+): Promise<string> {
+  if (!(await exists(candidate))) return candidate;
+  const directory = parentPath(candidate);
+  const name = baseName(candidate);
+  const extension = pathExtension(name);
+  const stem = extension ? name.slice(0, -extension.length) : name;
+  for (let attempt = 2; attempt <= maxAttempts; attempt += 1) {
+    const nextName = `${stem} ${attempt}${extension}`;
+    const next = directory ? `${directory}/${nextName}` : nextName;
+    if (!(await exists(next))) return next;
+  }
+  const fallback = `${stem} ${Date.now()}${extension}`;
+  return directory ? `${directory}/${fallback}` : fallback;
+}

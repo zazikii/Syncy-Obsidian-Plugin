@@ -12,7 +12,7 @@ import type {
   VersionsPage,
   WsTicket,
 } from "./types";
-import { AuthLostError, NetworkError, SyncyApiError, isSyncyApiError } from "./util/errors";
+import { AuthLostError, isSyncyApiError, NetworkError, SyncyApiError } from "./util/errors";
 
 interface RequestOptions {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD";
@@ -44,7 +44,9 @@ function parseErrorBody(response: RequestUrlResponse): {
     text = "";
   }
   try {
-    const parsed = response.json as { error?: { code?: unknown; message?: unknown; details?: unknown } };
+    const parsed = response.json as {
+      error?: { code?: unknown; message?: unknown; details?: unknown };
+    };
     const error = parsed?.error;
     if (error && typeof error.code === "string" && typeof error.message === "string") {
       return { code: error.code, message: error.message, details: error.details };
@@ -344,11 +346,7 @@ export class SyncyApi {
     return response.vault;
   }
 
-  async createVault(input: {
-    name: string;
-    e2ee: boolean;
-    keyEnvelope?: string;
-  }): Promise<Vault> {
+  async createVault(input: { name: string; e2ee: boolean; keyEnvelope?: string }): Promise<Vault> {
     const response = await this.requestJson<{ vault: Vault }>("/v1/vaults", {
       method: "POST",
       json: {
@@ -385,31 +383,21 @@ export class SyncyApi {
     vaultId: string,
     options: { since: number; until?: number; limit?: number },
   ): Promise<ChangesPage> {
-    return this.requestJson<ChangesPage>(
-      `/v1/vaults/${encodeURIComponent(vaultId)}/changes`,
-      {
-        query: {
-          since: options.since,
-          until: options.until,
-          limit: options.limit ?? 500,
-        },
+    return this.requestJson<ChangesPage>(`/v1/vaults/${encodeURIComponent(vaultId)}/changes`, {
+      query: {
+        since: options.since,
+        until: options.until,
+        limit: options.limit ?? 500,
       },
-    );
+    });
   }
 
-  async pushChanges(
-    vaultId: string,
-    changes: PushChange[],
-    atomic: boolean,
-  ): Promise<PushResult> {
-    const response = await this.request(
-      `/v1/vaults/${encodeURIComponent(vaultId)}/changes`,
-      {
-        method: "POST",
-        json: { atomic, changes },
-        allowStatuses: [409],
-      },
-    );
+  async pushChanges(vaultId: string, changes: PushChange[], atomic: boolean): Promise<PushResult> {
+    const response = await this.request(`/v1/vaults/${encodeURIComponent(vaultId)}/changes`, {
+      method: "POST",
+      json: { atomic, changes },
+      allowStatuses: [409],
+    });
     return response.json as PushResult;
   }
 

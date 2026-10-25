@@ -20,6 +20,7 @@ export interface PendingChange {
   hash: string | null;
   localHash: string | null;
   nonce: string | null;
+  size: number;
   mtime: number;
   ctime: number;
   expectedRevision: number | null;
@@ -27,6 +28,7 @@ export interface PendingChange {
   attempts: number;
   notBefore: number | null;
   reason: string | null;
+  movedFrom: string | null;
 }
 
 export interface VaultSyncState {
@@ -109,6 +111,7 @@ function normalizeLoadedState(raw: unknown, vaultId: string): VaultSyncState {
         hash: typeof candidate.hash === "string" ? candidate.hash : null,
         localHash: typeof candidate.localHash === "string" ? candidate.localHash : null,
         nonce: typeof candidate.nonce === "string" ? candidate.nonce : null,
+        size: typeof candidate.size === "number" ? candidate.size : 0,
         mtime: typeof candidate.mtime === "number" ? candidate.mtime : 0,
         ctime: typeof candidate.ctime === "number" ? candidate.ctime : 0,
         expectedRevision:
@@ -117,6 +120,7 @@ function normalizeLoadedState(raw: unknown, vaultId: string): VaultSyncState {
         attempts: typeof candidate.attempts === "number" ? candidate.attempts : 0,
         notBefore: typeof candidate.notBefore === "number" ? candidate.notBefore : null,
         reason: typeof candidate.reason === "string" ? candidate.reason : null,
+        movedFrom: typeof candidate.movedFrom === "string" ? candidate.movedFrom : null,
       };
     }
   }
@@ -143,6 +147,7 @@ export class SyncStateStore {
   private readonly filePath: string;
   private readonly tempPath: string;
   private readonly pathToFileId = new Map<string, string>();
+  private readonly pathToPendingId = new Map<string, string>();
   private saveTimer: number | null = null;
   private savePromise: Promise<void> | null = null;
   private dirty = false;
@@ -174,13 +179,21 @@ export class SyncStateStore {
 
   private rebuildIndex(): void {
     this.pathToFileId.clear();
+    this.pathToPendingId.clear();
     for (const [fileId, entry] of Object.entries(this.state.files)) {
       this.pathToFileId.set(pathKey(entry.path), fileId);
+    }
+    for (const [fileId, entry] of Object.entries(this.state.pending)) {
+      this.pathToPendingId.set(pathKey(entry.path), fileId);
     }
   }
 
   fileIdAt(path: string): string | null {
     return this.pathToFileId.get(pathKey(normalizeVaultPath(path))) ?? null;
+  }
+
+  pendingIdAt(path: string): string | null {
+    return this.pathToPendingId.get(pathKey(normalizeVaultPath(path))) ?? null;
   }
 
   entryAt(path: string): { fileId: string; entry: SyncFileEntry } | null {
@@ -235,7 +248,11 @@ export class SyncStateStore {
     return Object.values(this.state.pending);
   }
 
-  enqueue(change: Omit<PendingChange, "seq" | "attempts" | "notBefore" | "reason">): PendingChange {
+  enqueue(
+    change: Omit<PendingChange, "seq" | "attempts" | "notBefore" | "reason" | "movedFrom"> & {
+      movedFrom?: string | null;
+    },
+  ): PendingChange {
     const existing = this.state.pending[change.fileId];
     const entry: PendingChange = {
       ...change,
@@ -245,8 +262,11 @@ export class SyncStateStore {
       attempts: 0,
       notBefore: null,
       reason: null,
+      movedFrom: change.movedFrom ?? null,
     };
+    if (existing) this.pathToPendingId.delete(pathKey(existing.path));
     this.state.pending[change.fileId] = entry;
+    this.pathToPendingId.set(pathKey(entry.path), change.fileId);
     this.markDirty();
     return entry;
   }
@@ -254,6 +274,10 @@ export class SyncStateStore {
   updatePending(fileId: string, update: Partial<PendingChange>): void {
     const existing = this.state.pending[fileId];
     if (!existing) return;
+    if (update.path !== undefined && update.path !== existing.path) {
+      this.pathToPendingId.delete(pathKey(existing.path));
+      this.pathToPendingId.set(pathKey(update.path), fileId);
+    }
     this.state.pending[fileId] = { ...existing, ...update };
     this.markDirty();
   }
@@ -262,6 +286,7 @@ export class SyncStateStore {
     const existing = this.state.pending[fileId];
     if (!existing) return;
     if (seq !== undefined && existing.seq !== seq) return;
+    this.pathToPendingId.delete(pathKey(existing.path));
     delete this.state.pending[fileId];
     this.markDirty();
   }
@@ -269,6 +294,7 @@ export class SyncStateStore {
   clearPending(): void {
     if (Object.keys(this.state.pending).length === 0) return;
     this.state.pending = {};
+    this.pathToPendingId.clear();
     this.markDirty();
   }
 
@@ -298,8 +324,11 @@ export class SyncStateStore {
       this.state.cursor = 0;
       this.state.initialized = false;
       this.state.files = {};
+      this.state.pending = {};
+      this.state.uploadedHashes = {};
       this.state.lastFullSyncAt = Date.now();
       this.pathToFileId.clear();
+      this.pathToPendingId.clear();
     }
     this.markDirty();
   }
@@ -323,9 +352,14 @@ export class SyncStateStore {
     }
     if (!this.dirty) return;
     this.dirty = false;
-    this.savePromise = this.writeState().finally(() => {
-      this.savePromise = null;
-    });
+    this.savePromise = this.writeState()
+      .catch((error: unknown) => {
+        this.dirty = true;
+        throw error;
+      })
+      .finally(() => {
+        this.savePromise = null;
+      });
     await this.savePromise;
   }
 

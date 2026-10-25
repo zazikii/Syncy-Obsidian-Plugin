@@ -73,7 +73,9 @@ export interface PathMatcherOptions {
 }
 
 export const HARD_EXCLUDED_PATTERNS = [
+  ".obsidian/plugins/syncy",
   ".obsidian/plugins/syncy/**",
+  ".obsidian/syncy",
   ".obsidian/syncy/**",
   "**/.syncy-tmp-*",
   ".trash/**",

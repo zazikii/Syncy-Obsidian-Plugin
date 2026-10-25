@@ -21,6 +21,7 @@ export interface PluginData {
   version: 1;
   settings: SyncySettings;
   session: StoredSession | null;
+  deviceId: string | null;
   vaultKeys: Record<string, StoredVaultKey>;
 }
 
@@ -46,6 +47,7 @@ export function defaultPluginData(): PluginData {
     version: 1,
     settings: { ...DEFAULT_SETTINGS },
     session: null,
+    deviceId: null,
     vaultKeys: {},
   };
 }
@@ -54,7 +56,8 @@ export function mergePluginData(raw: unknown): PluginData {
   const fallback = defaultPluginData();
   if (typeof raw !== "object" || raw === null) return fallback;
   const value = raw as Partial<PluginData>;
-  const settings = typeof value.settings === "object" && value.settings !== null ? value.settings : {};
+  const settings =
+    typeof value.settings === "object" && value.settings !== null ? value.settings : {};
   const mergedSettings: SyncySettings = { ...DEFAULT_SETTINGS, ...settings };
   if (!Array.isArray(mergedSettings.excludePatterns)) {
     mergedSettings.excludePatterns = [];
@@ -63,7 +66,9 @@ export function mergePluginData(raw: unknown): PluginData {
     version: 1,
     settings: mergedSettings,
     session: value.session ?? null,
-    vaultKeys: typeof value.vaultKeys === "object" && value.vaultKeys !== null ? value.vaultKeys : {},
+    deviceId: typeof value.deviceId === "string" ? value.deviceId : null,
+    vaultKeys:
+      typeof value.vaultKeys === "object" && value.vaultKeys !== null ? value.vaultKeys : {},
   };
 }
 

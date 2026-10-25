@@ -55,10 +55,7 @@ async function deriveAesKey(key: Uint8Array, info: string): Promise<CryptoKey> {
     material,
     256,
   );
-  return crypto.subtle.importKey("raw", bits, { name: "AES-GCM" }, false, [
-    "encrypt",
-    "decrypt",
-  ]);
+  return crypto.subtle.importKey("raw", bits, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
 }
 
 async function deriveBytes(key: Uint8Array, info: string): Promise<Uint8Array<ArrayBuffer>> {
@@ -245,7 +242,10 @@ export async function wrapVaultKey(key: Uint8Array, passphrase: string): Promise
   return JSON.stringify(envelope);
 }
 
-export async function unwrapVaultKey(envelopeText: string, passphrase: string): Promise<Uint8Array> {
+export async function unwrapVaultKey(
+  envelopeText: string,
+  passphrase: string,
+): Promise<Uint8Array> {
   let parsed: unknown;
   try {
     parsed = JSON.parse(envelopeText);
