@@ -126,6 +126,18 @@ class FakeAdapter {
     await fs.mkdir(this.absolute(relative), { recursive: true });
   }
 
+  async list(relative: string): Promise<{ files: string[]; folders: string[] }> {
+    const entries = await fs.readdir(this.absolute(relative), { withFileTypes: true });
+    const files: string[] = [];
+    const folders: string[] = [];
+    for (const entry of entries) {
+      const entryPath = relative ? `${relative}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) folders.push(entryPath);
+      else files.push(entryPath);
+    }
+    return { files, folders };
+  }
+
   async rmdir(relative: string, recursive: boolean): Promise<void> {
     await fs.rm(this.absolute(relative), { recursive, force: false });
   }
@@ -150,6 +162,7 @@ function walk(root: string, relative = ""): { files: string[]; folders: string[]
 }
 
 class FakeVault {
+  readonly configDir = ".obsidian";
   readonly adapter: FakeAdapter;
   constructor(private readonly root: string) {
     this.adapter = new FakeAdapter(root);
@@ -683,6 +696,78 @@ describe.skipIf(!enabled)("sync engine against a live Syncy server", () => {
     client.stop();
     await api.deleteVault(serverVault.id).catch(() => undefined);
   }, 60_000);
+
+  it("syncs .obsidian config changes without relying on vault events", async () => {
+    const { root, vault } = await makeVault();
+    const api = new SyncyApi(serverUrl, {
+      saveSession: async () => undefined,
+      clearSession: async () => undefined,
+      onAuthLost: () => undefined,
+    });
+    await api.login(email, password, { name: "Engine Integration Config", platform: "node" });
+    const serverVault = await api.createVault({
+      name: `config-${randomUUID().slice(0, 8)}`,
+      e2ee: false,
+    });
+
+    await fs.mkdir(path.join(root, ".obsidian"), { recursive: true });
+    await fs.writeFile(path.join(root, ".obsidian", "app.json"), '{"baseFontSize":16}', "utf8");
+    const state = await SyncStateStore.load(
+      vault.adapter as never,
+      ".obsidian/plugins/syncy",
+      serverVault.id,
+    );
+    const engine = new SyncEngine({
+      app: { vault } as never,
+      api,
+      vaultId: serverVault.id,
+      e2ee: false,
+      vaultCrypto: null,
+      state,
+      intervalSeconds: 0,
+      syncOnStartup: true,
+      isExcluded: compileExcludes(
+        buildExcludePatterns({
+          syncConfig: true,
+          syncWorkspace: false,
+          syncPluginData: false,
+          extraPatterns: [],
+        }),
+      ),
+      maxBlobBytes: () => 512 * 1024 * 1024,
+      onStatus: () => undefined,
+      notify: () => undefined,
+      onAuthLost: () => undefined,
+      onVaultUnavailable: () => undefined,
+    });
+    engine.start();
+    await waitForSync(
+      engine,
+      async () => state.state.initialized && Object.keys(state.state.pending).length === 0,
+    );
+    let files = await api.listFiles(serverVault.id, { limit: 100 });
+    let appJson = files.files.find((file) => file.path === ".obsidian/app.json")!;
+    expect(appJson).toBeDefined();
+    expect(appJson.hash).toBe(await sha256Hex(Buffer.from('{"baseFontSize":16}', "utf8")));
+
+    await fs.writeFile(path.join(root, ".obsidian", "app.json"), '{"baseFontSize":18}', "utf8");
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    await engine.syncNow();
+    await waitForSync(engine, async () => Object.keys(state.state.pending).length === 0);
+    files = await api.listFiles(serverVault.id, { limit: 100 });
+    appJson = files.files.find((file) => file.path === ".obsidian/app.json")!;
+    expect(appJson.hash).toBe(await sha256Hex(Buffer.from('{"baseFontSize":18}', "utf8")));
+
+    await fs.unlink(path.join(root, ".obsidian", "app.json"));
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    await engine.syncNow();
+    await waitForSync(engine, async () => Object.keys(state.state.pending).length === 0);
+    files = await api.listFiles(serverVault.id, { limit: 100 });
+    expect(files.files.some((file) => file.path === ".obsidian/app.json")).toBe(false);
+
+    await engine.stopAndWait();
+    await api.deleteVault(serverVault.id).catch(() => undefined);
+  }, 120_000);
 
   it("syncs encrypted vaults without exposing plaintext paths", async () => {
     const { root, vault } = await makeVault();
