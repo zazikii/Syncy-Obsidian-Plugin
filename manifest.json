@@ -1,0 +1,10 @@
+{
+  "id": "syncy",
+  "name": "Syncy",
+  "version": "0.1.0",
+  "minAppVersion": "1.6.0",
+  "description": "Self-hosted sync for your vault with the Syncy server.",
+  "author": "zazikii",
+  "authorUrl": "https://github.com/zazikii",
+  "isDesktopOnly": false
+}
