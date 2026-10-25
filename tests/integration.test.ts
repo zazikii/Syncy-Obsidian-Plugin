@@ -172,6 +172,10 @@ class FakeVault {
     return walk(this.root).files.map((file) => ({ path: file }));
   }
 
+  getAllFolders(): unknown[] {
+    return walk(this.root).folders.map((folder) => new mock.TFolder(folder));
+  }
+
   getAllLoadedFiles(): unknown[] {
     const { files, folders } = walk(this.root);
     return [
@@ -259,6 +263,8 @@ describe.skipIf(!enabled)("sync engine against a live Syncy server", () => {
         syncWorkspace: false,
         syncPluginData: false,
         extraPatterns: [],
+        configDir: ".obsidian",
+        pluginDir: ".obsidian/plugins/syncy",
       }),
     );
     const engine = new SyncEngine({
@@ -361,6 +367,8 @@ describe.skipIf(!enabled)("sync engine against a live Syncy server", () => {
           syncWorkspace: false,
           syncPluginData: false,
           extraPatterns: [],
+          configDir: ".obsidian",
+          pluginDir: ".obsidian/plugins/syncy",
         }),
       ),
       maxBlobBytes: () => 512 * 1024 * 1024,
@@ -469,6 +477,8 @@ describe.skipIf(!enabled)("sync engine against a live Syncy server", () => {
           syncWorkspace: false,
           syncPluginData: false,
           extraPatterns: [],
+          configDir: ".obsidian",
+          pluginDir: ".obsidian/plugins/syncy",
         }),
       ),
       maxBlobBytes: () => 512 * 1024 * 1024,
@@ -540,6 +550,8 @@ describe.skipIf(!enabled)("sync engine against a live Syncy server", () => {
           syncWorkspace: false,
           syncPluginData: false,
           extraPatterns: [],
+          configDir: ".obsidian",
+          pluginDir: ".obsidian/plugins/syncy",
         }),
       ),
       maxBlobBytes: () => 512 * 1024 * 1024,
@@ -732,6 +744,8 @@ describe.skipIf(!enabled)("sync engine against a live Syncy server", () => {
           syncWorkspace: false,
           syncPluginData: false,
           extraPatterns: [],
+          configDir: ".obsidian",
+          pluginDir: ".obsidian/plugins/syncy",
         }),
       ),
       maxBlobBytes: () => 512 * 1024 * 1024,
@@ -807,6 +821,8 @@ describe.skipIf(!enabled)("sync engine against a live Syncy server", () => {
           syncWorkspace: false,
           syncPluginData: false,
           extraPatterns: [],
+          configDir: ".obsidian",
+          pluginDir: ".obsidian/plugins/syncy",
         }),
       ),
       maxBlobBytes: () => 512 * 1024 * 1024,

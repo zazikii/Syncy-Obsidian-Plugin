@@ -473,6 +473,39 @@ async function main() {
   const install = await prepareObsidianInstall();
   await launchObsidian(install);
   await enablePlugin();
+  await cdp.evaluate(`(async () => {
+    app.setting.open();
+    app.setting.openTabById("syncy");
+  })()`);
+  const settingsTarget = await waitFor(
+    async () => {
+      const targets = await (await fetch(`http://127.0.0.1:${install.cdpPort}/json/list`)).json();
+      return targets.find(
+        (target) => target.type === "page" && target.title.startsWith("Settings"),
+      );
+    },
+    "Obsidian settings window",
+    15_000,
+    250,
+  );
+  const settingsCdp = new Cdp(settingsTarget.webSocketDebuggerUrl);
+  await settingsCdp.connect();
+  await waitFor(
+    async () => settingsCdp.evaluate('document.body.innerText.includes("Server URL")'),
+    "Syncy settings tab",
+    15_000,
+    250,
+  );
+  const settingsRendered = await settingsCdp.evaluate(`(() => {
+    const text = document.body.innerText;
+    return ["Connection", "Vault", "Encryption", "Sync", "Advanced"].every((label) =>
+      text.includes(label),
+    );
+  })()`);
+  if (!settingsRendered) throw new Error("Syncy settings sections did not render");
+  log("Syncy settings tab rendered with the native settings API");
+  settingsCdp.close();
+  await cdp.evaluate(`app.setting.close()`);
   await setupPlugin();
   const initial = await waitForSync("initial sync");
   log(`initial sync complete (${initial.files} files, cursor ${initial.cursor})`);

@@ -37,6 +37,8 @@ describe("exclusions", () => {
     syncConfig: true,
     syncWorkspace: false,
     syncPluginData: false,
+    configDir: ".obsidian",
+    pluginDir: ".obsidian/plugins/syncy",
     extraPatterns: [],
   });
   const excluded = compileExcludes(defaults);
@@ -73,6 +75,8 @@ describe("exclusions", () => {
         syncConfig: false,
         syncWorkspace: false,
         syncPluginData: false,
+        configDir: ".obsidian",
+        pluginDir: ".obsidian/plugins/syncy",
         extraPatterns: ["Private/**"],
       }),
     );
@@ -80,5 +84,21 @@ describe("exclusions", () => {
     expect(allOff("Private")).toBe(true);
     expect(allOff("Private/secret.md")).toBe(true);
     expect(allOff("Notes/hello.md")).toBe(false);
+  });
+
+  it("uses the configured vault config directory", () => {
+    const custom = compileExcludes(
+      buildExcludePatterns({
+        syncConfig: false,
+        syncWorkspace: false,
+        syncPluginData: true,
+        configDir: ".custom-config",
+        pluginDir: ".custom-config/plugins/syncy",
+        extraPatterns: [],
+      }),
+    );
+    expect(custom(".custom-config/app.json")).toBe(true);
+    expect(custom(".custom-config/plugins/syncy/data.json")).toBe(true);
+    expect(custom(".obsidian/app.json")).toBe(false);
   });
 });
