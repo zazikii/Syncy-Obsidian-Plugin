@@ -1,4 +1,11 @@
-import { type App, Notice, PluginSettingTab, Setting, type TextAreaComponent } from "obsidian";
+import {
+  type App,
+  Notice,
+  PluginSettingTab,
+  Setting,
+  type SettingDefinitionItem,
+  type TextAreaComponent,
+} from "obsidian";
 import type SyncyPlugin from "../main";
 import { errorMessage } from "../util/errors";
 import { askPassphrase } from "./modals";
@@ -16,16 +23,70 @@ export class SyncySettingTab extends PluginSettingTab {
     this.plugin = plugin;
   }
 
-  refresh(): void {
-    if (this.containerEl.isShown()) this.display();
+  getSettingDefinitions(): SettingDefinitionItem[] {
+    return [
+      {
+        name: "Syncy",
+        desc: "Self-hosted sync, account, vault, encryption and sync controls.",
+        aliases: [
+          "server",
+          "email",
+          "password",
+          "login",
+          "vault",
+          "link",
+          "unlink",
+          "encryption",
+          "e2ee",
+          "passphrase",
+          "remember key",
+          "sync",
+          "realtime",
+          "polling",
+          "workspace",
+          "plugin data",
+          "excluded paths",
+          "full resync",
+          "reset state",
+          "device id",
+          "server url",
+          "device name",
+          "remote vault",
+          "new vault name",
+          "link this vault",
+          "end-to-end encryption",
+          "e2ee passphrase",
+          "remember key on this device",
+          "forget saved key",
+          "enable sync",
+          "real-time notifications",
+          "sync on startup",
+          "polling interval",
+          "sync obsidian configuration",
+          "sync workspace layout",
+          "sync community plugin data",
+          "manual sync",
+          "server version",
+          "maximum blob size",
+          "advanced",
+        ],
+        render: (setting) => {
+          setting.settingEl.empty();
+          setting.settingEl.addClass("syncy-settings-root");
+          this.renderSettings(setting.settingEl);
+        },
+      },
+    ];
   }
 
-  display(): void {
-    const { containerEl } = this;
+  refresh(): void {
+    if (this.containerEl.isShown()) this.update();
+  }
+
+  private renderSettings(containerEl: HTMLElement): void {
     containerEl.empty();
     containerEl.addClass("syncy-settings");
 
-    containerEl.createEl("h2", { text: "Syncy" });
     this.renderSummary(containerEl);
     this.renderConnection(containerEl);
     this.renderVault(containerEl);
@@ -87,7 +148,7 @@ export class SyncySettingTab extends PluginSettingTab {
   }
 
   private renderConnection(containerEl: HTMLElement): void {
-    containerEl.createEl("h3", { text: "Connection" });
+    new Setting(containerEl).setName("Connection").setHeading();
     const settings = this.plugin.data.settings;
 
     new Setting(containerEl)
@@ -200,7 +261,7 @@ export class SyncySettingTab extends PluginSettingTab {
   }
 
   private renderVault(containerEl: HTMLElement): void {
-    containerEl.createEl("h3", { text: "Vault" });
+    new Setting(containerEl).setName("Vault").setHeading();
     const settings = this.plugin.data.settings;
 
     if (!this.plugin.api?.hasSession()) {
@@ -326,7 +387,7 @@ export class SyncySettingTab extends PluginSettingTab {
   }
 
   private renderEncryption(containerEl: HTMLElement): void {
-    containerEl.createEl("h3", { text: "Encryption" });
+    new Setting(containerEl).setName("Encryption").setHeading();
     const settings = this.plugin.data.settings;
 
     if (!settings.vaultId) {
@@ -401,7 +462,7 @@ export class SyncySettingTab extends PluginSettingTab {
         .addButton((button) => {
           button
             .setButtonText("Forget key")
-            .setWarning()
+            .setDestructive()
             .onClick(async () => {
               button.setDisabled(true);
               try {
@@ -442,7 +503,7 @@ export class SyncySettingTab extends PluginSettingTab {
   }
 
   private renderSync(containerEl: HTMLElement): void {
-    containerEl.createEl("h3", { text: "Sync" });
+    new Setting(containerEl).setName("Sync").setHeading();
     const settings = this.plugin.data.settings;
 
     new Setting(containerEl)
@@ -491,18 +552,20 @@ export class SyncySettingTab extends PluginSettingTab {
             intervalSeconds: Math.max(0, Math.min(86_400, parsed)),
           });
         });
-        text.inputEl.addEventListener("blur", async () => {
-          const parsed = Number.parseInt(text.inputEl.value, 10);
-          const seconds = Number.isFinite(parsed) ? Math.max(0, Math.min(86_400, parsed)) : 30;
-          text.setValue(String(seconds));
-          await this.plugin.updateSettings({ intervalSeconds: seconds }, true);
+        text.inputEl.addEventListener("blur", () => {
+          void (async () => {
+            const parsed = Number.parseInt(text.inputEl.value, 10);
+            const seconds = Number.isFinite(parsed) ? Math.max(0, Math.min(86_400, parsed)) : 30;
+            text.setValue(String(seconds));
+            await this.plugin.updateSettings({ intervalSeconds: seconds }, true);
+          })();
         });
       });
 
     new Setting(containerEl)
       .setName("Sync Obsidian configuration")
       .setDesc(
-        "Syncs .obsidian settings, themes, snippets and installed plugins, except workspace files.",
+        `Syncs ${this.app.vault.configDir} settings, themes, snippets and installed plugins, except workspace files.`,
       )
       .addToggle((toggle) => {
         toggle.setValue(settings.syncConfig).onChange(async (value) => {
@@ -544,9 +607,11 @@ export class SyncySettingTab extends PluginSettingTab {
           const patterns = parsePatterns(value);
           await this.plugin.updateSettings({ excludePatterns: patterns });
         });
-        area.inputEl.addEventListener("blur", async () => {
-          const patterns = parsePatterns(area.inputEl.value);
-          await this.plugin.updateSettings({ excludePatterns: patterns }, true);
+        area.inputEl.addEventListener("blur", () => {
+          void (async () => {
+            const patterns = parsePatterns(area.inputEl.value);
+            await this.plugin.updateSettings({ excludePatterns: patterns }, true);
+          })();
         });
       });
 
@@ -581,7 +646,7 @@ export class SyncySettingTab extends PluginSettingTab {
       .addButton((button) => {
         button
           .setButtonText("Reset local state")
-          .setWarning()
+          .setDestructive()
           .onClick(async () => {
             button.setDisabled(true);
             try {
@@ -595,7 +660,7 @@ export class SyncySettingTab extends PluginSettingTab {
   }
 
   private renderAdvanced(containerEl: HTMLElement): void {
-    containerEl.createEl("h3", { text: "Advanced" });
+    new Setting(containerEl).setName("Advanced").setHeading();
     const info = this.plugin.serverInfo;
     const settings = this.plugin.data.settings;
 

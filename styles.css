@@ -49,10 +49,16 @@
   font-size: var(--font-ui-small);
 }
 
-.syncy-settings h3 {
+.syncy-settings-root {
+  display: block;
+  padding: 0;
+  border: 0;
+}
+
+.syncy-settings .setting-item-heading {
   margin-top: 24px;
-  border-bottom: 1px solid var(--background-modifier-border);
   padding-bottom: 6px;
+  border-bottom: 1px solid var(--background-modifier-border);
 }
 
 .syncy-modal-description {

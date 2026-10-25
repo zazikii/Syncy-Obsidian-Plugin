@@ -76,14 +76,12 @@ export interface PathMatcherOptions {
   syncConfig: boolean;
   syncWorkspace: boolean;
   syncPluginData: boolean;
+  configDir: string;
+  pluginDir?: string;
   extraPatterns: string[];
 }
 
 export const HARD_EXCLUDED_PATTERNS = [
-  ".obsidian/plugins/syncy",
-  ".obsidian/plugins/syncy/**",
-  ".obsidian/syncy",
-  ".obsidian/syncy/**",
   "**/.syncy-tmp-*",
   ".trash/**",
   ".git/**",
@@ -94,16 +92,18 @@ export const HARD_EXCLUDED_PATTERNS = [
 
 export function buildExcludePatterns(options: PathMatcherOptions): string[] {
   const patterns = [...HARD_EXCLUDED_PATTERNS];
+  const configDir = normalizeVaultPath(options.configDir);
 
-  if (!options.syncConfig) patterns.push(".obsidian/**");
+  if (!options.syncConfig) patterns.push(`${configDir}/**`);
   if (!options.syncWorkspace) {
-    patterns.push(".obsidian/workspace.json", "workspace.json");
-    patterns.push(".obsidian/workspace-mobile.json", "workspace-mobile.json");
-    patterns.push(".obsidian/workspaces.json");
+    patterns.push(`${configDir}/workspace.json`, "workspace.json");
+    patterns.push(`${configDir}/workspace-mobile.json`, "workspace-mobile.json");
+    patterns.push(`${configDir}/workspaces.json`);
   }
-  if (!options.syncPluginData) patterns.push(".obsidian/plugins/*/data.json");
-  if (options.syncConfig) {
-    patterns.push(".obsidian/plugins/syncy/**");
+  if (!options.syncPluginData) patterns.push(`${configDir}/plugins/*/data.json`);
+  if (options.pluginDir) {
+    const pluginDir = normalizeVaultPath(options.pluginDir);
+    patterns.push(pluginDir, `${pluginDir}/**`);
   }
 
   patterns.push(...options.extraPatterns);

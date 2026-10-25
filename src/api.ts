@@ -51,7 +51,9 @@ function parseErrorBody(response: RequestUrlResponse): {
     if (error && typeof error.code === "string" && typeof error.message === "string") {
       return { code: error.code, message: error.message, details: error.details };
     }
-  } catch {}
+  } catch (error) {
+    void error;
+  }
   return {
     code: "HTTP_ERROR",
     message: text.slice(0, 300) || "The server returned an error",
@@ -326,7 +328,9 @@ export class SyncyApi {
           headers: { "Content-Type": "application/json" },
         });
       }
-    } catch {}
+    } catch (error) {
+      void error;
+    }
     await this.handlers.clearSession();
   }
 

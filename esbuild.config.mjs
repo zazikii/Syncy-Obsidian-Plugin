@@ -7,9 +7,9 @@ const context = await esbuild.context({
   banner: {
     js: [
       "/* Syncy for Obsidian",
-      " * Required Notice: Copyright (c) 2026 Syncy contributors",
-      " * PolyForm Noncommercial License 1.0.0",
-      " * https://polyformproject.org/licenses/noncommercial/1.0.0",
+      " * Copyright (c) 2026 Syncy contributors",
+      " * GNU Affero General Public License v3.0 only",
+      " * https://www.gnu.org/licenses/agpl-3.0.html",
       " */",
     ].join("\n"),
   },

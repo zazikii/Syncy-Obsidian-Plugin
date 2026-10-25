@@ -1,6 +1,6 @@
 {
   "name": "syncy-obsidian-plugin",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Self-hosted Obsidian sync client for the Syncy server",
   "main": "main.js",
   "private": true,
@@ -22,7 +22,7 @@
     "self-hosted"
   ],
   "author": "zazikii",
-  "license": "PolyForm-Noncommercial-1.0.0",
+  "license": "AGPL-3.0-only",
   "repository": {
     "type": "git",
     "url": "https://github.com/zazikii/Syncy-Obsidian-Plugin.git"

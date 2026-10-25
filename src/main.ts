@@ -494,7 +494,9 @@ export default class SyncyPlugin extends Plugin {
         syncConfig: this.data.settings.syncConfig,
         syncWorkspace: this.data.settings.syncWorkspace,
         syncPluginData: this.data.settings.syncPluginData,
-        extraPatterns: [...this.data.settings.excludePatterns, pluginDir, `${pluginDir}/**`],
+        configDir: this.app.vault.configDir,
+        pluginDir,
+        extraPatterns: this.data.settings.excludePatterns,
       }),
     );
 
@@ -640,28 +642,28 @@ export default class SyncyPlugin extends Plugin {
 
   private registerCommands(): void {
     this.addCommand({
-      id: "syncy-sync-now",
+      id: "sync-now",
       name: "Sync now",
       callback: () => {
         void this.syncNow();
       },
     });
     this.addCommand({
-      id: "syncy-full-resync",
+      id: "full-resync",
       name: "Full resync",
       callback: () => {
         void this.fullResync();
       },
     });
     this.addCommand({
-      id: "syncy-reset-local-state",
+      id: "reset-local-state",
       name: "Reset local sync state",
       callback: () => {
         void this.resetLocalState();
       },
     });
     this.addCommand({
-      id: "syncy-history",
+      id: "history",
       name: "Version history for the current file",
       checkCallback: (checking) => {
         const file = this.app.workspace.getActiveFile();
@@ -672,7 +674,7 @@ export default class SyncyPlugin extends Plugin {
       },
     });
     this.addCommand({
-      id: "syncy-sign-out",
+      id: "sign-out",
       name: "Sign out",
       callback: () => {
         void this.signOut();

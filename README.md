@@ -1,19 +1,19 @@
 <div align="center">
 
-<h1>Syncy for Obsidian</h1>
+<h1>Syncy</h1>
 
 <p><strong>Your vault. Your server. Everything in sync.</strong></p>
 
 <p>The companion Obsidian plugin for the self-hosted Syncy server.</p>
 
 <p>
-  <img alt="Obsidian 1.6+" src="https://img.shields.io/badge/Obsidian-%3E%3D1.6-7C3AED?logo=obsidian&logoColor=white">
+  <img alt="Obsidian 1.13+" src="https://img.shields.io/badge/Obsidian-%3E%3D1.13-7C3AED?logo=obsidian&logoColor=white">
   <img alt="API v1" src="https://img.shields.io/badge/API-v1-0F766E">
   <img alt="Desktop and mobile" src="https://img.shields.io/badge/platform-desktop%20%2B%20mobile-38BDF8">
   <img alt="E2EE optional" src="https://img.shields.io/badge/E2EE-optional-7C3AED">
   <img alt="Public source" src="https://img.shields.io/badge/source-public-2EA043">
   <img alt="Vibecoded" src="https://img.shields.io/badge/vibecoded-yes-FF6B6B">
-  <img alt="License PolyForm Noncommercial" src="https://img.shields.io/badge/license-PolyForm%20Noncommercial-0F766E">
+  <img alt="License AGPL-3.0" src="https://img.shields.io/badge/license-AGPL--3.0-0F766E">
 </p>
 
 </div>
@@ -22,7 +22,7 @@
 > **Vibecoded.** Syncy was built with heavy AI assistance. It has an integration test suite and is designed carefully, but it is young software. Review the code, run the tests, keep independent backups, and do not treat this plugin as the only copy of important data.
 
 > [!NOTE]
-> **Open code and public repository, free to use.** The complete source is available to clone, fork, modify and self-host. You may **not** sell it or publish a paid version. Read the [license](#license).
+> **Open source and public repository, free to use.** The complete source is available to clone, fork, modify and self-host. Paid versions are not authorized and must not use the Syncy name. Read the [license](#license).
 
 Syncy for Obsidian is the client half of a two-part self-hosted sync stack. The Syncy server lives in a separate repository. The server is content-agnostic, so note sync, attachment sync, plugin sync, theme sync and vault-configuration sync all use the same reliable file protocol.
 
@@ -78,6 +78,8 @@ Syncy for Obsidian is the client half of a two-part self-hosted sync stack. The 
 
 The plugin does not parse Markdown or plugin bundles. That means new Obsidian file formats, community plugins and future vault features work without plugin changes.
 
+Syncy must enumerate vault paths to build its sync map. Excluded paths are filtered out before hashing, uploading or writing.
+
 ## Architecture
 
 ```mermaid
@@ -97,7 +99,7 @@ flowchart LR
 
 ## Installation
 
-Requirements: Obsidian 1.6 or newer and a reachable Syncy server. Node.js 22 or newer is required only to build the plugin.
+Requirements: Obsidian 1.13 or newer and a reachable Syncy server. Node.js 22 or newer is required only to build the plugin.
 
 Syncy is not in the community plugin store yet. Build it and copy the result into your vault:
 
@@ -304,7 +306,7 @@ Read the [server E2EE threat model](https://github.com/zazikii/Syncy/blob/main/d
 - [Plugin implementation guide](https://github.com/zazikii/Syncy/blob/main/docs/PLUGIN_GUIDE.md) — state, stable file IDs, hashing, batching, conflicts, settings, E2EE and large-vault rules.
 - [End-to-end encryption](https://github.com/zazikii/Syncy/blob/main/docs/E2EE.md) — keys, envelopes, threat model and metadata leakage.
 - [Self-hosting operations](https://github.com/zazikii/Syncy/blob/main/docs/SELF_HOSTING.md) — HTTPS, reverse proxies, backups, GC and upgrades.
-- [License](LICENSE) — PolyForm Noncommercial 1.0.0.
+- [License](LICENSE) — GNU Affero General Public License v3.0.
 
 ## Development
 
@@ -375,18 +377,17 @@ This is an early project. Bug reports, protocol feedback, security reviews and p
 4. Add tests for behavior changes.
 5. Open a pull request describing the problem and the fix.
 
-Please keep the sync semantics and tests intact. Do not include credentials, vault data, tokens or server secrets in issues or pull requests. By contributing, you agree that your contribution is licensed under the same [PolyForm Noncommercial license](LICENSE).
+Please keep the sync semantics and tests intact. Do not include credentials, vault data, tokens or server secrets in issues or pull requests. By contributing, you agree that your contribution is licensed under the same [AGPL-3.0 license](LICENSE).
 
 ## License
 
-Syncy is licensed under the **PolyForm Noncommercial License 1.0.0**.
+Syncy is licensed under the **GNU Affero General Public License v3.0** (AGPL-3.0-only).
 
-You may clone, fork, modify, self-host and share it for noncommercial purposes. You may **not** sell it or publish a paid version.
+You may use, study, modify, self-host and share it. If you distribute a modified version or run a modified version as a network service, the AGPL requires you to make the corresponding source available under the same license.
 
-Because commercial use is restricted, this is a source-available project rather than an OSI-approved open-source license. The complete source is public and free to use.
+Paid versions are not authorized and should not be published under the Syncy name. Forks are welcome, but they must keep the AGPL license and use their own branding.
 
-**Required Notice:** Copyright (c) 2026 Syncy contributors
+Copyright (c) 2026 Syncy contributors.
 
-Full terms: [LICENSE](LICENSE) · [polyformproject.org](https://polyformproject.org/licenses/noncommercial/1.0.0)
+Full terms: [LICENSE](LICENSE) | [gnu.org/licenses/agpl-3.0](https://www.gnu.org/licenses/agpl-3.0.html)
 
-Repository: [github.com/zazikii/Syncy-Obsidian-Plugin](https://github.com/zazikii/Syncy-Obsidian-Plugin) · Server: [github.com/zazikii/Syncy](https://github.com/zazikii/Syncy)

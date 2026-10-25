@@ -107,7 +107,7 @@ export interface PushChange {
 
 export interface PushConflict {
   fileId: string;
-  code: "revision_mismatch" | "not_found" | "already_exists" | "path_taken" | string;
+  code: string;
   message: string;
   server?: FileSummary;
 }

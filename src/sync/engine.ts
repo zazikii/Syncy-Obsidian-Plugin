@@ -404,9 +404,7 @@ export class SyncEngine {
       await this.enqueueUpsertFromDisk(path, false);
     }
 
-    const folders = this.app.vault
-      .getAllLoadedFiles()
-      .filter((item): item is TFolder => item instanceof TFolder);
+    const folders = this.app.vault.getAllFolders();
     for (const folder of folders) {
       const path = normalizeVaultPath(folder.path);
       if (!path || this.options.isExcluded(path)) continue;
@@ -1674,8 +1672,7 @@ export class SyncEngine {
       const files = this.app.vault.getFiles().filter((file) => isSubPath(file.path, normalized));
       for (const file of files) await this.enqueueUpsertFromDisk(file.path, false);
       const folders = this.app.vault
-        .getAllLoadedFiles()
-        .filter((item): item is TFolder => item instanceof TFolder)
+        .getAllFolders()
         .filter((folder) => isSubPath(folder.path, normalized));
       for (const folder of folders) await this.enqueueFolderUpsert(folder.path);
     } else {

@@ -73,7 +73,9 @@ export class RealtimeClient {
       socket.onerror = () => {
         try {
           socket.close();
-        } catch {}
+        } catch (error) {
+          void error;
+        }
       };
       socket.onclose = () => {
         if (this.socket === socket) {
