@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:integration": "vitest run tests/integration.test.ts",
+    "test:e2e": "npm run build && node tests/e2e/obsidian.e2e.mjs",
     "test:watch": "vitest",
     "lint": "biome check src tests",
     "check": "npm run typecheck && npm run lint && npm test",
@@ -28,6 +29,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.3",
+    "@electron/asar": "^4.3.1",
     "@types/node": "^24.0.0",
     "esbuild": "^0.28.2",
     "obsidian": "^1.14.4",
