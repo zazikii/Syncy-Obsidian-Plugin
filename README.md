@@ -1,6 +1,6 @@
-<div align="center">
+# Syncy
 
-<h1>Syncy</h1>
+<div align="center">
 
 <p><strong>Your vault. Your server. Everything in sync.</strong></p>
 
@@ -35,6 +35,7 @@ Syncy for Obsidian is the client half of a two-part self-hosted sync stack. The 
 - [What gets synced](#what-gets-synced)
 - [Architecture](#architecture)
 - [Installation](#installation)
+- [Releases](#releases)
 - [Plugin setup](#plugin-setup)
 - [Vault settings sync](#vault-settings-sync)
 - [Large-vault reliability](#large-vault-reliability)
@@ -78,7 +79,7 @@ Syncy for Obsidian is the client half of a two-part self-hosted sync stack. The 
 
 The plugin does not parse Markdown or plugin bundles. That means new Obsidian file formats, community plugins and future vault features work without plugin changes.
 
-Syncy must enumerate vault paths to build its sync map. Excluded paths are filtered out before hashing, uploading or writing.
+Full-vault sync requires Syncy to enumerate vault paths to build its sync map. Enumeration stays local: only paths selected for sync are sent to your own Syncy server, and excluded paths are filtered out before hashing, uploading or writing.
 
 ## Architecture
 
@@ -117,6 +118,17 @@ Copy `main.js`, `manifest.json` and `styles.css` into:
 ```
 
 Then open **Settings → Community plugins**, reload Obsidian, and enable **Syncy**.
+
+## Releases
+
+Releases are built, checked and published by the GitHub Actions workflow in [.github/workflows/release.yml](.github/workflows/release.yml). Release assets are covered by build provenance attestations:
+
+```bash
+gh attestation verify main.js --repo zazikii/Syncy-Obsidian-Plugin
+gh attestation verify styles.css --repo zazikii/Syncy-Obsidian-Plugin
+```
+
+Publish a release by pushing a tag that matches `manifest.json`'s version. Do not upload release files by hand; manual uploads do not get attestations.
 
 For development, link the repository into your vault and run the watch build:
 
