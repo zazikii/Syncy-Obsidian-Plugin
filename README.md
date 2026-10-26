@@ -26,6 +26,9 @@
 
 Syncy for Obsidian is the client half of a two-part self-hosted sync stack. The Syncy server lives in a separate repository. The server is content-agnostic, so note sync, attachment sync, plugin sync, theme sync and vault-configuration sync all use the same reliable file protocol.
 
+> [!TIP]
+> **Set up your server first.** This plugin needs the Syncy server. Clone and follow the setup guide at [github.com/zazikii/Syncy](https://github.com/zazikii/Syncy.git).
+
 > [!IMPORTANT]
 > Syncy is **not** compatible with Obsidian's official, private Sync protocol. It implements a clean API for its own companion plugin. It is also not affiliated with or endorsed by Obsidian.
 
@@ -100,7 +103,7 @@ flowchart LR
 
 ## Installation
 
-Requirements: Obsidian 1.13 or newer and a reachable Syncy server. Node.js 22 or newer is required only to build the plugin.
+Requirements: Obsidian 1.13 or newer and a reachable [Syncy server](https://github.com/zazikii/Syncy.git). Node.js 22 or newer is required only to build the plugin.
 
 Syncy is not in the community plugin store yet. Build it and copy the result into your vault:
 
@@ -144,7 +147,7 @@ npm run dev
 
 ## Plugin setup
 
-1. Start your Syncy server and create the account from its `.env` or with `POST /v1/setup`.
+1. Start your [Syncy server](https://github.com/zazikii/Syncy.git) and create the account from its `.env` or with `POST /v1/setup`.
 2. Open **Settings → Syncy**.
 3. Enter the server URL, email and password, then click **Sign in**.
 4. Choose an existing remote vault and click **Link**, or enter a name and click **Create vault**.
