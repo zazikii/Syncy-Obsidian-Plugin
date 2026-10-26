@@ -1,6 +1,6 @@
-# Syncy
-
 <div align="center">
+
+# Syncy
 
 <p><strong>Your vault. Your server. Everything in sync.</strong></p>
 
